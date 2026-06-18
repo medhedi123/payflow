@@ -8,6 +8,7 @@ import com.hedi.payflow.user.entity.User;
 import com.hedi.payflow.user.entity.UserStatus;
 import com.hedi.payflow.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 public class AuthService {
 
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
     public AuthResponse registerCustomer(RegisterRequest request) {
         return register(request, Role.CUSTOMER);
@@ -24,9 +26,13 @@ public class AuthService {
         return register(request, Role.MERCHANT);
     }
 
-    public AuthResponse login(LoginRequest request) {
+   public AuthResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new RuntimeException("Invalid email or password"));
+
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            throw new RuntimeException("Invalid email or password");
+        }
 
         return new AuthResponse(
                 "temporary-token",
@@ -45,7 +51,7 @@ public class AuthService {
                 .firstName(request.getFirstName())
                 .lastName(request.getLastName())
                 .email(request.getEmail())
-                .password(request.getPassword())
+                .password(passwordEncoder.encode(request.getPassword()))
                 .role(role)
                 .status(UserStatus.ACTIVE)
                 .build();
