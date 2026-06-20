@@ -3,6 +3,7 @@ package com.hedi.payflow.auth.service;
 import com.hedi.payflow.auth.dto.AuthResponse;
 import com.hedi.payflow.auth.dto.LoginRequest;
 import com.hedi.payflow.auth.dto.RegisterRequest;
+import com.hedi.payflow.auth.jwt.JwtService;
 import com.hedi.payflow.user.entity.Role;
 import com.hedi.payflow.user.entity.User;
 import com.hedi.payflow.user.entity.UserStatus;
@@ -17,6 +18,7 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
     public AuthResponse registerCustomer(RegisterRequest request) {
         return register(request, Role.CUSTOMER);
@@ -26,7 +28,7 @@ public class AuthService {
         return register(request, Role.MERCHANT);
     }
 
-   public AuthResponse login(LoginRequest request) {
+    public AuthResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new RuntimeException("Invalid email or password"));
 
@@ -35,7 +37,7 @@ public class AuthService {
         }
 
         return new AuthResponse(
-                "temporary-token",
+                jwtService.generateToken(user),
                 user.getId(),
                 user.getEmail(),
                 user.getRole()
@@ -59,7 +61,7 @@ public class AuthService {
         User savedUser = userRepository.save(user);
 
         return new AuthResponse(
-                "temporary-token",
+                jwtService.generateToken(savedUser),
                 savedUser.getId(),
                 savedUser.getEmail(),
                 savedUser.getRole()
