@@ -11,6 +11,8 @@ import com.hedi.payflow.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import com.hedi.payflow.wallet.entity.Wallet;
+import com.hedi.payflow.wallet.repository.WalletRepository;
 
 @Service
 @RequiredArgsConstructor
@@ -19,6 +21,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final WalletRepository walletRepository;
 
     public AuthResponse registerCustomer(RegisterRequest request) {
         return register(request, Role.CUSTOMER);
@@ -59,6 +62,12 @@ public class AuthService {
                 .build();
 
         User savedUser = userRepository.save(user);
+
+                Wallet wallet = Wallet.builder()
+                .user(savedUser)
+                .build();
+
+        walletRepository.save(wallet);
 
         return new AuthResponse(
                 jwtService.generateToken(savedUser),
