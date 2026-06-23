@@ -5,6 +5,7 @@ import com.hedi.payflow.dashboard.service.DashboardService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import com.hedi.payflow.dashboard.dto.MerchantDashboardResponse;
 
 @RestController
 @RequestMapping("/api/v1/dashboard")
@@ -16,5 +17,9 @@ public class DashboardController {
     @GetMapping("/summary")
     public DashboardSummaryResponse getSummary(Authentication authentication) {
         return dashboardService.getSummary(authentication);
+    }
+    @GetMapping("/merchant")
+    public MerchantDashboardResponse getMerchantDashboard(Authentication authentication) {
+        return dashboardService.getMerchantDashboard(authentication);
     }
 }

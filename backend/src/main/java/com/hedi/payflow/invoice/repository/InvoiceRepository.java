@@ -13,5 +13,8 @@ import java.util.Optional;
 public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
 
     List<Invoice> findByMerchantOrderByCreatedAtDesc(User merchant);
+    long countByMerchant(User merchant);
+    long countByMerchantAndStatus(User merchant, InvoiceStatus status);
+    List<Invoice> findByMerchantAndStatus(User merchant, InvoiceStatus status);
     Optional<Invoice> findByIdAndStatus(Long id, InvoiceStatus status);
 }
