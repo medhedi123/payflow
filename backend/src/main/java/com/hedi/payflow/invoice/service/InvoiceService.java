@@ -1,10 +1,12 @@
 package com.hedi.payflow.invoice.service;
 
+import com.hedi.payflow.common.service.ReferenceGeneratorService;
 import com.hedi.payflow.invoice.dto.CreateInvoiceRequest;
 import com.hedi.payflow.invoice.dto.InvoiceResponse;
 import com.hedi.payflow.invoice.entity.Invoice;
 import com.hedi.payflow.invoice.entity.InvoiceStatus;
 import com.hedi.payflow.invoice.repository.InvoiceRepository;
+import com.hedi.payflow.ledger.service.LedgerService;
 import com.hedi.payflow.transaction.entity.TransactionStatus;
 import com.hedi.payflow.transaction.entity.TransactionType;
 import com.hedi.payflow.transaction.entity.WalletTransaction;
@@ -20,7 +22,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +31,8 @@ public class InvoiceService {
     private final InvoiceRepository invoiceRepository;
     private final WalletRepository walletRepository;
     private final WalletTransactionRepository transactionRepository;
+    private final ReferenceGeneratorService referenceGeneratorService;
+    private final LedgerService ledgerService;
 
     public InvoiceResponse createInvoice(Authentication authentication, CreateInvoiceRequest request) {
         User merchant = userRepository.findByEmail(authentication.getName())
@@ -40,7 +43,7 @@ public class InvoiceService {
         }
 
         Invoice invoice = Invoice.builder()
-                .invoiceNumber("INV-" + UUID.randomUUID())
+                .invoiceNumber(referenceGeneratorService.generate("INV"))
                 .customerEmail(request.getCustomerEmail())
                 .description(request.getDescription())
                 .amount(request.getAmount())
@@ -84,10 +87,10 @@ public class InvoiceService {
         walletRepository.save(customerWallet);
         walletRepository.save(merchantWallet);
 
-        String reference = "INVPAY-" + UUID.randomUUID();
+        String paymentReference = referenceGeneratorService.generate("INVPAY");
 
-        transactionRepository.save(WalletTransaction.builder()
-                .reference(reference + "-OUT")
+        WalletTransaction outgoingPayment = WalletTransaction.builder()
+                .reference(paymentReference + "-OUT")
                 .amount(invoice.getAmount())
                 .currency(customerWallet.getCurrency())
                 .type(TransactionType.PAYMENT)
@@ -95,10 +98,10 @@ public class InvoiceService {
                 .description("Invoice payment " + invoice.getInvoiceNumber())
                 .senderWallet(customerWallet)
                 .receiverWallet(merchantWallet)
-                .build());
+                .build();
 
-        transactionRepository.save(WalletTransaction.builder()
-                .reference(reference + "-IN")
+        WalletTransaction incomingPayment = WalletTransaction.builder()
+                .reference(paymentReference + "-IN")
                 .amount(invoice.getAmount())
                 .currency(merchantWallet.getCurrency())
                 .type(TransactionType.PAYMENT)
@@ -106,7 +109,20 @@ public class InvoiceService {
                 .description("Invoice payment " + invoice.getInvoiceNumber())
                 .senderWallet(customerWallet)
                 .receiverWallet(merchantWallet)
-                .build());
+                .build();
+
+        WalletTransaction savedOutgoingPayment = transactionRepository.save(outgoingPayment);
+        transactionRepository.save(incomingPayment);
+
+        ledgerService.postWalletMovement(
+                savedOutgoingPayment.getReference(),
+                customer,
+                invoice.getMerchant(),
+                invoice.getAmount(),
+                customerWallet.getCurrency(),
+                "Invoice payment " + invoice.getInvoiceNumber(),
+                savedOutgoingPayment
+        );
 
         invoice.setStatus(InvoiceStatus.PAID);
         invoice.setPaidAt(LocalDateTime.now());

@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+:root {
+  --payflow-navy: #07111f;
+  --payflow-deep: #0b1730;
+  --payflow-blue: #2563eb;
+  --payflow-cyan: #22d3ee;
+  --payflow-mint: #2dd4bf;
+  --payflow-sand: #f6f1e8;
+  --payflow-surface: #f8fafc;
+  --payflow-ink: #0f172a;
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(34, 211, 238, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.16), transparent 30%),
+    linear-gradient(135deg, #f8fafc 0%, #f6f1e8 100%);
+  color: var(--payflow-ink);
+}
+
+.payflow-glow {
+  box-shadow:
+    0 24px 80px rgba(37, 99, 235, 0.18),
+    0 8px 30px rgba(34, 211, 238, 0.12);
+}
+
+.payflow-card {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+
+.payflow-gradient {
+  background:
+    radial-gradient(circle at top left, rgba(34, 211, 238, 0.35), transparent 35%),
+    linear-gradient(135deg, #07111f 0%, #0b1730 45%, #1e3a8a 100%);
+}
+
+.flow-line {
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.85), transparent);
+}

@@ -1,6 +1,12 @@
 package com.hedi.payflow.transaction.service;
 
+import com.hedi.payflow.common.service.ReferenceGeneratorService;
+import com.hedi.payflow.ledger.service.LedgerService;
 import com.hedi.payflow.transaction.dto.TransactionResponse;
+import com.hedi.payflow.transaction.dto.TransferRequest;
+import com.hedi.payflow.transaction.entity.TransactionStatus;
+import com.hedi.payflow.transaction.entity.TransactionType;
+import com.hedi.payflow.transaction.entity.WalletTransaction;
 import com.hedi.payflow.transaction.repository.WalletTransactionRepository;
 import com.hedi.payflow.user.entity.User;
 import com.hedi.payflow.user.repository.UserRepository;
@@ -9,12 +15,7 @@ import com.hedi.payflow.wallet.repository.WalletRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
-import com.hedi.payflow.transaction.dto.TransferRequest;
-import com.hedi.payflow.transaction.entity.TransactionStatus;
-import com.hedi.payflow.transaction.entity.TransactionType;
-import com.hedi.payflow.transaction.entity.WalletTransaction;
 
-import java.util.UUID;
 import java.util.List;
 
 @Service
@@ -24,9 +25,10 @@ public class TransactionService {
     private final UserRepository userRepository;
     private final WalletRepository walletRepository;
     private final WalletTransactionRepository transactionRepository;
+    private final LedgerService ledgerService;
+    private final ReferenceGeneratorService referenceGeneratorService;
 
     public List<TransactionResponse> getMyTransactions(Authentication authentication) {
-
         User user = userRepository.findByEmail(authentication.getName())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -36,18 +38,10 @@ public class TransactionService {
         return transactionRepository
                 .findBySenderWalletOrReceiverWalletOrderByCreatedAtDesc(wallet, wallet)
                 .stream()
-                .map(tx -> new TransactionResponse(
-                        tx.getId(),
-                        tx.getReference(),
-                        tx.getAmount(),
-                        tx.getCurrency(),
-                        tx.getType(),
-                        tx.getStatus(),
-                        tx.getDescription(),
-                        tx.getCreatedAt()
-                ))
+                .map(this::mapToResponse)
                 .toList();
     }
+
     public TransactionResponse transfer(Authentication authentication, TransferRequest request) {
         User senderUser = userRepository.findByEmail(authentication.getName())
                 .orElseThrow(() -> new RuntimeException("Sender not found"));
@@ -56,7 +50,7 @@ public class TransactionService {
                 .orElseThrow(() -> new RuntimeException("Receiver not found"));
 
         if (senderUser.getEmail().equals(receiverUser.getEmail())) {
-                throw new RuntimeException("You cannot transfer money to yourself");
+            throw new RuntimeException("You cannot transfer money to yourself");
         }
 
         Wallet senderWallet = walletRepository.findByUser(senderUser)
@@ -66,7 +60,7 @@ public class TransactionService {
                 .orElseThrow(() -> new RuntimeException("Receiver wallet not found"));
 
         if (senderWallet.getBalance().compareTo(request.getAmount()) < 0) {
-                throw new RuntimeException("Insufficient balance");
+            throw new RuntimeException("Insufficient balance");
         }
 
         senderWallet.setBalance(senderWallet.getBalance().subtract(request.getAmount()));
@@ -75,7 +69,7 @@ public class TransactionService {
         walletRepository.save(senderWallet);
         walletRepository.save(receiverWallet);
 
-        String transferReference = "TRF-" + UUID.randomUUID();
+        String transferReference = referenceGeneratorService.generate("TRF");
 
         WalletTransaction senderTransaction = WalletTransaction.builder()
                 .reference(transferReference + "-OUT")
@@ -99,18 +93,32 @@ public class TransactionService {
                 .receiverWallet(receiverWallet)
                 .build();
 
-        transactionRepository.save(senderTransaction);
+        WalletTransaction savedSenderTransaction = transactionRepository.save(senderTransaction);
         transactionRepository.save(receiverTransaction);
 
-        return new TransactionResponse(
-                senderTransaction.getId(),
-                senderTransaction.getReference(),
-                senderTransaction.getAmount(),
-                senderTransaction.getCurrency(),
-                senderTransaction.getType(),
-                senderTransaction.getStatus(),
-                senderTransaction.getDescription(),
-                senderTransaction.getCreatedAt()
+        ledgerService.postWalletMovement(
+                savedSenderTransaction.getReference(),
+                senderUser,
+                receiverUser,
+                request.getAmount(),
+                senderWallet.getCurrency(),
+                "Wallet transfer to " + receiverUser.getEmail(),
+                savedSenderTransaction
         );
-        }
+
+        return mapToResponse(savedSenderTransaction);
+    }
+
+    private TransactionResponse mapToResponse(WalletTransaction tx) {
+        return new TransactionResponse(
+                tx.getId(),
+                tx.getReference(),
+                tx.getAmount(),
+                tx.getCurrency(),
+                tx.getType(),
+                tx.getStatus(),
+                tx.getDescription(),
+                tx.getCreatedAt()
+        );
+    }
 }
