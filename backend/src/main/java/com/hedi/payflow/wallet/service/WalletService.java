@@ -1,6 +1,5 @@
 package com.hedi.payflow.wallet.service;
 
-import com.hedi.payflow.common.service.ReferenceGeneratorService;
 import com.hedi.payflow.ledger.service.LedgerService;
 import com.hedi.payflow.transaction.entity.TransactionStatus;
 import com.hedi.payflow.transaction.entity.TransactionType;
@@ -16,6 +15,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 
+import java.util.UUID;
+
 @Service
 @RequiredArgsConstructor
 public class WalletService {
@@ -24,7 +25,6 @@ public class WalletService {
     private final WalletRepository walletRepository;
     private final WalletTransactionRepository transactionRepository;
     private final LedgerService ledgerService;
-    private final ReferenceGeneratorService referenceGeneratorService;
 
     public WalletResponse getMyWallet(Authentication authentication) {
         User user = userRepository.findByEmail(authentication.getName())
@@ -43,33 +43,42 @@ public class WalletService {
         Wallet wallet = walletRepository.findByUser(user)
                 .orElseThrow(() -> new RuntimeException("Wallet not found"));
 
-        wallet.setBalance(wallet.getBalance().add(request.getAmount()));
-        Wallet savedWallet = walletRepository.save(wallet);
-
-        String reference = referenceGeneratorService.generate("DEP");
-
         WalletTransaction transaction = WalletTransaction.builder()
-                .reference(reference)
+                .reference("DEP-" + UUID.randomUUID())
                 .amount(request.getAmount())
-                .currency(savedWallet.getCurrency())
+                .currency(wallet.getCurrency())
                 .type(TransactionType.DEPOSIT)
-                .status(TransactionStatus.SUCCESS)
+                .status(TransactionStatus.PENDING)
                 .description("Wallet deposit")
-                .receiverWallet(savedWallet)
+                .receiverWallet(wallet)
                 .build();
 
         WalletTransaction savedTransaction = transactionRepository.save(transaction);
 
-        ledgerService.postDeposit(
-                savedTransaction.getReference(),
-                user,
-                request.getAmount(),
-                savedWallet.getCurrency(),
-                "Wallet deposit",
-                savedTransaction
-        );
+        try {
+            wallet.setBalance(wallet.getBalance().add(request.getAmount()));
+            Wallet savedWallet = walletRepository.save(wallet);
 
-        return mapToResponse(savedWallet, user);
+            ledgerService.postDeposit(
+                    savedTransaction.getReference(),
+                    user,
+                    request.getAmount(),
+                    savedWallet.getCurrency(),
+                    "Wallet deposit",
+                    savedTransaction
+            );
+
+            savedTransaction.setStatus(TransactionStatus.SUCCESS);
+            transactionRepository.save(savedTransaction);
+
+            return mapToResponse(savedWallet, user);
+
+        } catch (Exception e) {
+            savedTransaction.setStatus(TransactionStatus.FAILED);
+            transactionRepository.save(savedTransaction);
+
+            throw e;
+        }
     }
 
     private WalletResponse mapToResponse(Wallet wallet, User user) {

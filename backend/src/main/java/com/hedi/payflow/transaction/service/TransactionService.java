@@ -43,6 +43,7 @@ public class TransactionService {
     }
 
     public TransactionResponse transfer(Authentication authentication, TransferRequest request) {
+
         User senderUser = userRepository.findByEmail(authentication.getName())
                 .orElseThrow(() -> new RuntimeException("Sender not found"));
 
@@ -50,7 +51,7 @@ public class TransactionService {
                 .orElseThrow(() -> new RuntimeException("Receiver not found"));
 
         if (senderUser.getEmail().equals(receiverUser.getEmail())) {
-            throw new RuntimeException("You cannot transfer money to yourself");
+                throw new RuntimeException("You cannot transfer money to yourself");
         }
 
         Wallet senderWallet = walletRepository.findByUser(senderUser)
@@ -60,14 +61,8 @@ public class TransactionService {
                 .orElseThrow(() -> new RuntimeException("Receiver wallet not found"));
 
         if (senderWallet.getBalance().compareTo(request.getAmount()) < 0) {
-            throw new RuntimeException("Insufficient balance");
+                throw new RuntimeException("Insufficient balance");
         }
-
-        senderWallet.setBalance(senderWallet.getBalance().subtract(request.getAmount()));
-        receiverWallet.setBalance(receiverWallet.getBalance().add(request.getAmount()));
-
-        walletRepository.save(senderWallet);
-        walletRepository.save(receiverWallet);
 
         String transferReference = referenceGeneratorService.generate("TRF");
 
@@ -76,7 +71,7 @@ public class TransactionService {
                 .amount(request.getAmount())
                 .currency(senderWallet.getCurrency())
                 .type(TransactionType.TRANSFER_OUT)
-                .status(TransactionStatus.SUCCESS)
+                .status(TransactionStatus.PENDING)
                 .description("Transfer to " + receiverUser.getEmail())
                 .senderWallet(senderWallet)
                 .receiverWallet(receiverWallet)
@@ -87,27 +82,60 @@ public class TransactionService {
                 .amount(request.getAmount())
                 .currency(receiverWallet.getCurrency())
                 .type(TransactionType.TRANSFER_IN)
-                .status(TransactionStatus.SUCCESS)
+                .status(TransactionStatus.PENDING)
                 .description("Transfer from " + senderUser.getEmail())
                 .senderWallet(senderWallet)
                 .receiverWallet(receiverWallet)
                 .build();
 
-        WalletTransaction savedSenderTransaction = transactionRepository.save(senderTransaction);
-        transactionRepository.save(receiverTransaction);
+        WalletTransaction savedSenderTransaction =
+                transactionRepository.save(senderTransaction);
 
-        ledgerService.postWalletMovement(
-                savedSenderTransaction.getReference(),
-                senderUser,
-                receiverUser,
-                request.getAmount(),
-                senderWallet.getCurrency(),
-                "Wallet transfer to " + receiverUser.getEmail(),
-                savedSenderTransaction
-        );
+        WalletTransaction savedReceiverTransaction =
+                transactionRepository.save(receiverTransaction);
+
+        try {
+
+                senderWallet.setBalance(
+                        senderWallet.getBalance().subtract(request.getAmount())
+                );
+
+                receiverWallet.setBalance(
+                        receiverWallet.getBalance().add(request.getAmount())
+                );
+
+                walletRepository.save(senderWallet);
+                walletRepository.save(receiverWallet);
+
+                ledgerService.postWalletMovement(
+                        savedSenderTransaction.getReference(),
+                        senderUser,
+                        receiverUser,
+                        request.getAmount(),
+                        senderWallet.getCurrency(),
+                        "Wallet transfer to " + receiverUser.getEmail(),
+                        savedSenderTransaction
+                );
+
+                savedSenderTransaction.setStatus(TransactionStatus.SUCCESS);
+                savedReceiverTransaction.setStatus(TransactionStatus.SUCCESS);
+
+        } catch (Exception e) {
+
+                savedSenderTransaction.setStatus(TransactionStatus.FAILED);
+                savedReceiverTransaction.setStatus(TransactionStatus.FAILED);
+
+                transactionRepository.save(savedSenderTransaction);
+                transactionRepository.save(savedReceiverTransaction);
+
+                throw e;
+        }
+
+        transactionRepository.save(savedSenderTransaction);
+        transactionRepository.save(savedReceiverTransaction);
 
         return mapToResponse(savedSenderTransaction);
-    }
+        }
 
     private TransactionResponse mapToResponse(WalletTransaction tx) {
         return new TransactionResponse(
