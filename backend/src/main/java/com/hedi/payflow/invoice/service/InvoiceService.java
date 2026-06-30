@@ -7,6 +7,8 @@ import com.hedi.payflow.invoice.entity.Invoice;
 import com.hedi.payflow.invoice.entity.InvoiceStatus;
 import com.hedi.payflow.invoice.repository.InvoiceRepository;
 import com.hedi.payflow.ledger.service.LedgerService;
+import com.hedi.payflow.notification.entity.NotificationType;
+import com.hedi.payflow.notification.service.NotificationService;
 import com.hedi.payflow.transaction.entity.TransactionStatus;
 import com.hedi.payflow.transaction.entity.TransactionType;
 import com.hedi.payflow.transaction.entity.WalletTransaction;
@@ -33,6 +35,7 @@ public class InvoiceService {
     private final WalletTransactionRepository transactionRepository;
     private final ReferenceGeneratorService referenceGeneratorService;
     private final LedgerService ledgerService;
+    private final NotificationService notificationService;
 
     public InvoiceResponse createInvoice(Authentication authentication, CreateInvoiceRequest request) {
         User merchant = userRepository.findByEmail(authentication.getName())
@@ -51,7 +54,17 @@ public class InvoiceService {
                 .merchant(merchant)
                 .build();
 
-        return mapToResponse(invoiceRepository.save(invoice));
+        Invoice savedInvoice = invoiceRepository.save(invoice);
+
+        notificationService.create(
+                merchant,
+                NotificationType.INVOICE_CREATED,
+                "Invoice created",
+                "Invoice " + savedInvoice.getInvoiceNumber()
+                        + " created for " + savedInvoice.getCustomerEmail()
+        );
+
+        return mapToResponse(savedInvoice);
     }
 
     public List<InvoiceResponse> getMyInvoices(Authentication authentication) {
@@ -78,7 +91,7 @@ public class InvoiceService {
                 .orElseThrow(() -> new RuntimeException("Merchant wallet not found"));
 
         if (customerWallet.getBalance().compareTo(invoice.getAmount()) < 0) {
-                throw new RuntimeException("Insufficient balance");
+            throw new RuntimeException("Insufficient balance");
         }
 
         String paymentReference = referenceGeneratorService.generate("INVPAY");
@@ -109,43 +122,62 @@ public class InvoiceService {
         WalletTransaction savedIncomingPayment = transactionRepository.save(incomingPayment);
 
         try {
-                customerWallet.setBalance(customerWallet.getBalance().subtract(invoice.getAmount()));
-                merchantWallet.setBalance(merchantWallet.getBalance().add(invoice.getAmount()));
+            customerWallet.setBalance(customerWallet.getBalance().subtract(invoice.getAmount()));
+            merchantWallet.setBalance(merchantWallet.getBalance().add(invoice.getAmount()));
 
-                walletRepository.save(customerWallet);
-                walletRepository.save(merchantWallet);
+            walletRepository.save(customerWallet);
+            walletRepository.save(merchantWallet);
 
-                ledgerService.postWalletMovement(
-                        savedOutgoingPayment.getReference(),
-                        customer,
-                        invoice.getMerchant(),
-                        invoice.getAmount(),
-                        customerWallet.getCurrency(),
-                        "Invoice payment " + invoice.getInvoiceNumber(),
-                        savedOutgoingPayment
-                );
+            ledgerService.postWalletMovement(
+                    savedOutgoingPayment.getReference(),
+                    customer,
+                    invoice.getMerchant(),
+                    invoice.getAmount(),
+                    customerWallet.getCurrency(),
+                    "Invoice payment " + invoice.getInvoiceNumber(),
+                    savedOutgoingPayment
+            );
 
-                savedOutgoingPayment.setStatus(TransactionStatus.SUCCESS);
-                savedIncomingPayment.setStatus(TransactionStatus.SUCCESS);
+            savedOutgoingPayment.setStatus(TransactionStatus.SUCCESS);
+            savedIncomingPayment.setStatus(TransactionStatus.SUCCESS);
 
-                transactionRepository.save(savedOutgoingPayment);
-                transactionRepository.save(savedIncomingPayment);
+            transactionRepository.save(savedOutgoingPayment);
+            transactionRepository.save(savedIncomingPayment);
 
-                invoice.setStatus(InvoiceStatus.PAID);
-                invoice.setPaidAt(LocalDateTime.now());
+            invoice.setStatus(InvoiceStatus.PAID);
+            invoice.setPaidAt(LocalDateTime.now());
 
-                return mapToResponse(invoiceRepository.save(invoice));
+            Invoice savedInvoice = invoiceRepository.save(invoice);
+
+            notificationService.create(
+                    customer,
+                    NotificationType.INVOICE_PAID,
+                    "Payment successful",
+                    "You paid invoice " + savedInvoice.getInvoiceNumber()
+                            + " for " + savedInvoice.getAmount() + " "
+                            + customerWallet.getCurrency()
+            );
+
+            notificationService.create(
+                    savedInvoice.getMerchant(),
+                    NotificationType.INVOICE_PAID,
+                    "Invoice paid",
+                    "Invoice " + savedInvoice.getInvoiceNumber()
+                            + " has been paid by " + customer.getEmail()
+            );
+
+            return mapToResponse(savedInvoice);
 
         } catch (Exception e) {
-                savedOutgoingPayment.setStatus(TransactionStatus.FAILED);
-                savedIncomingPayment.setStatus(TransactionStatus.FAILED);
+            savedOutgoingPayment.setStatus(TransactionStatus.FAILED);
+            savedIncomingPayment.setStatus(TransactionStatus.FAILED);
 
-                transactionRepository.save(savedOutgoingPayment);
-                transactionRepository.save(savedIncomingPayment);
+            transactionRepository.save(savedOutgoingPayment);
+            transactionRepository.save(savedIncomingPayment);
 
-                throw e;
+            throw e;
         }
-        }
+    }
 
     private InvoiceResponse mapToResponse(Invoice invoice) {
         return new InvoiceResponse(

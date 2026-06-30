@@ -15,6 +15,8 @@ import com.hedi.payflow.wallet.repository.WalletRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import com.hedi.payflow.notification.entity.NotificationType;
+import com.hedi.payflow.notification.service.NotificationService;
 
 import java.util.List;
 
@@ -27,7 +29,9 @@ public class TransactionService {
     private final WalletTransactionRepository transactionRepository;
     private final LedgerService ledgerService;
     private final ReferenceGeneratorService referenceGeneratorService;
-
+    private final NotificationService notificationService;
+    
+    
     public List<TransactionResponse> getMyTransactions(Authentication authentication) {
         User user = userRepository.findByEmail(authentication.getName())
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -116,6 +120,21 @@ public class TransactionService {
                         "Wallet transfer to " + receiverUser.getEmail(),
                         savedSenderTransaction
                 );
+                notificationService.create(
+                        senderUser,
+                        NotificationType.TRANSFER_SENT,
+                        "Transfer sent",
+                        request.getAmount() + " " + senderWallet.getCurrency()
+                                + " sent to " + receiverUser.getEmail()
+                );
+
+                notificationService.create(
+                        receiverUser,
+                        NotificationType.TRANSFER_RECEIVED,
+                        "Transfer received",
+                        request.getAmount() + " " + receiverWallet.getCurrency()
+                                + " received from " + senderUser.getEmail()
+                );
 
                 savedSenderTransaction.setStatus(TransactionStatus.SUCCESS);
                 savedReceiverTransaction.setStatus(TransactionStatus.SUCCESS);
@@ -150,3 +169,4 @@ public class TransactionService {
         );
     }
 }
+

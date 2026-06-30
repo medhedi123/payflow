@@ -31,6 +31,9 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
+                        .requestMatchers("/api/v1/invoices/pdf/sample").permitAll()
+                        
+                        .requestMatchers("/api/v1/invoices/*/pdf").permitAll()
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(authenticationProvider())

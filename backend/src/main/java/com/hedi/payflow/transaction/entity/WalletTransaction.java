@@ -47,6 +47,15 @@ public class WalletTransaction {
     @JoinColumn(name = "receiver_wallet_id")
     private Wallet receiverWallet;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reversed_transaction_id")
+    private WalletTransaction reversedTransaction;
+
+    private LocalDateTime reversedAt;
+
+    @Column(length = 255)
+    private String reversalReason;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -59,7 +68,7 @@ public class WalletTransaction {
         }
 
         if (status == null) {
-            status = TransactionStatus.SUCCESS;
+            status = TransactionStatus.PENDING;
         }
     }
 }

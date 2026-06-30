@@ -16,6 +16,12 @@ import com.hedi.payflow.invoice.entity.Invoice;
 import com.hedi.payflow.invoice.entity.InvoiceStatus;
 import com.hedi.payflow.invoice.repository.InvoiceRepository;
 import com.hedi.payflow.user.entity.Role;
+import com.hedi.payflow.dashboard.dto.DashboardResponse;
+import com.hedi.payflow.transaction.entity.TransactionStatus;
+import com.hedi.payflow.dashboard.dto.ChartPointResponse;
+import com.hedi.payflow.dashboard.dto.DashboardChartsResponse;
+
+import java.util.Arrays;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -85,6 +91,121 @@ public class DashboardService {
                 paidInvoices,
                 totalRevenue,
                 wallet.getBalance()
+        );
+        }
+
+        public DashboardResponse getAnalytics(Authentication authentication) {
+        User user = userRepository.findByEmail(authentication.getName())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Wallet wallet = walletRepository.findByUser(user)
+                .orElseThrow(() -> new RuntimeException("Wallet not found"));
+
+        List<WalletTransaction> transactions =
+                transactionRepository.findBySenderWalletOrReceiverWalletOrderByCreatedAtDesc(wallet, wallet);
+
+        BigDecimal totalDepositsAmount = sumByType(transactions, TransactionType.DEPOSIT);
+        BigDecimal totalTransfersSentAmount = sumByType(transactions, TransactionType.TRANSFER_OUT);
+        BigDecimal totalTransfersReceivedAmount = sumByType(transactions, TransactionType.TRANSFER_IN);
+        BigDecimal totalPaymentsAmount = sumByType(transactions, TransactionType.PAYMENT);
+        BigDecimal totalReversalsAmount = sumByType(transactions, TransactionType.REVERSAL);
+
+        long successfulTransactions = countByStatus(transactions, TransactionStatus.SUCCESS);
+        long pendingTransactions = countByStatus(transactions, TransactionStatus.PENDING);
+        long failedTransactions = countByStatus(transactions, TransactionStatus.FAILED);
+        long reversedTransactions = countByStatus(transactions, TransactionStatus.REVERSED);
+
+        long totalInvoices = 0;
+        long paidInvoices = 0;
+        long pendingInvoices = 0;
+        BigDecimal invoiceRevenue = BigDecimal.ZERO;
+
+        if (user.getRole() == Role.MERCHANT) {
+                totalInvoices = invoiceRepository.countByMerchant(user);
+                paidInvoices = invoiceRepository.countByMerchantAndStatus(user, InvoiceStatus.PAID);
+                pendingInvoices = invoiceRepository.countByMerchantAndStatus(user, InvoiceStatus.PENDING);
+
+                invoiceRevenue = invoiceRepository
+                        .findByMerchantAndStatus(user, InvoiceStatus.PAID)
+                        .stream()
+                        .map(Invoice::getAmount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+
+        return new DashboardResponse(
+                wallet.getBalance(),
+                totalDepositsAmount,
+                totalTransfersSentAmount,
+                totalTransfersReceivedAmount,
+                totalPaymentsAmount,
+                totalReversalsAmount,
+                transactions.size(),
+                successfulTransactions,
+                pendingTransactions,
+                failedTransactions,
+                reversedTransactions,
+                totalInvoices,
+                paidInvoices,
+                pendingInvoices,
+                invoiceRevenue
+        );
+        }
+
+        private long countByStatus(List<WalletTransaction> transactions, TransactionStatus status) {
+        return transactions.stream()
+                .filter(tx -> tx.getStatus() == status)
+                .count();
+        }
+
+        public DashboardChartsResponse getCharts(Authentication authentication) {
+
+        User user = userRepository.findByEmail(authentication.getName())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Wallet wallet = walletRepository.findByUser(user)
+                .orElseThrow(() -> new RuntimeException("Wallet not found"));
+
+        List<WalletTransaction> transactions =
+                transactionRepository.findBySenderWalletOrReceiverWalletOrderByCreatedAtDesc(wallet, wallet);
+
+        List<ChartPointResponse> transactionVolume = Arrays.asList(
+                new ChartPointResponse("Deposits",
+                        sumByType(transactions, TransactionType.DEPOSIT)),
+                new ChartPointResponse("Transfers",
+                        sumByType(transactions, TransactionType.TRANSFER_OUT)
+                                .add(sumByType(transactions, TransactionType.TRANSFER_IN))),
+                new ChartPointResponse("Payments",
+                        sumByType(transactions, TransactionType.PAYMENT)),
+                new ChartPointResponse("Reversals",
+                        sumByType(transactions, TransactionType.REVERSAL))
+        );
+
+        List<ChartPointResponse> transactionTypes = Arrays.asList(
+                new ChartPointResponse(
+                        "SUCCESS",
+                        java.math.BigDecimal.valueOf(
+                                countByStatus(transactions, TransactionStatus.SUCCESS))
+                ),
+                new ChartPointResponse(
+                        "FAILED",
+                        java.math.BigDecimal.valueOf(
+                                countByStatus(transactions, TransactionStatus.FAILED))
+                ),
+                new ChartPointResponse(
+                        "PENDING",
+                        java.math.BigDecimal.valueOf(
+                                countByStatus(transactions, TransactionStatus.PENDING))
+                ),
+                new ChartPointResponse(
+                        "REVERSED",
+                        java.math.BigDecimal.valueOf(
+                                countByStatus(transactions, TransactionStatus.REVERSED))
+                )
+        );
+
+        return new DashboardChartsResponse(
+                transactionVolume,
+                transactionTypes
         );
         }
 }

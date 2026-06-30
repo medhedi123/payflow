@@ -6,5 +6,7 @@ public enum TransactionType {
     TRANSFER_IN,
     TRANSFER_OUT,
     PAYMENT,
-    REFUND
+    REFUND,
+
+    REVERSAL
 }

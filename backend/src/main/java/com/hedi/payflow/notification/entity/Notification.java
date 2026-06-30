@@ -1,0 +1,50 @@
+package com.hedi.payflow.notification.entity;
+
+import com.hedi.payflow.user.entity.User;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "notifications")
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class Notification {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "user_id")
+    private User user;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private NotificationType type;
+
+    @Column(nullable = false)
+    private String title;
+
+    @Column(nullable = false, length = 1000)
+    private String message;
+
+    @Column(nullable = false)
+    private Boolean read;
+
+    @Column(nullable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    public void onCreate() {
+        createdAt = LocalDateTime.now();
+
+        if (read == null) {
+            read = false;
+        }
+    }
+}

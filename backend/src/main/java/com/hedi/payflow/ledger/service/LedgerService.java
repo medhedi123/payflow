@@ -168,4 +168,59 @@ public class LedgerService {
 
         return ledgerTransactionRepository.save(savedTransaction);
     }
+
+    public LedgerTransaction postReversal(
+            String reference,
+            User originalDebitUser,
+            User originalCreditUser,
+            BigDecimal amount,
+            String currency,
+            String description,
+            WalletTransaction reversalTransaction
+    ) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("Ledger amount must be greater than zero");
+        }
+
+        LedgerAccount originalDebitAccount = getOrCreateAccount(originalDebitUser, currency);
+        LedgerAccount originalCreditAccount = getOrCreateAccount(originalCreditUser, currency);
+
+        LedgerTransaction savedTransaction = ledgerTransactionRepository.save(
+                LedgerTransaction.builder()
+                        .reference(reference != null ? reference : "REV-" + UUID.randomUUID())
+                        .status(LedgerTransactionStatus.PENDING)
+                        .walletTransaction(reversalTransaction)
+                        .description(description)
+                        .build()
+        );
+
+        ledgerEntryRepository.save(LedgerEntry.builder()
+                .ledgerTransaction(savedTransaction)
+                .ledgerAccount(originalCreditAccount)
+                .type(LedgerEntryType.DEBIT)
+                .amount(amount)
+                .currency(currency)
+                .description(description)
+                .build());
+
+        ledgerEntryRepository.save(LedgerEntry.builder()
+                .ledgerTransaction(savedTransaction)
+                .ledgerAccount(originalDebitAccount)
+                .type(LedgerEntryType.CREDIT)
+                .amount(amount)
+                .currency(currency)
+                .description(description)
+                .build());
+
+        originalCreditAccount.setBalance(originalCreditAccount.getBalance().subtract(amount));
+        originalDebitAccount.setBalance(originalDebitAccount.getBalance().add(amount));
+
+        ledgerAccountRepository.save(originalCreditAccount);
+        ledgerAccountRepository.save(originalDebitAccount);
+
+        savedTransaction.setStatus(LedgerTransactionStatus.POSTED);
+        savedTransaction.setPostedAt(LocalDateTime.now());
+
+        return ledgerTransactionRepository.save(savedTransaction);
+    }
 }

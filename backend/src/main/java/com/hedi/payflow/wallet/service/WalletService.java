@@ -14,6 +14,8 @@ import com.hedi.payflow.wallet.repository.WalletRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import com.hedi.payflow.notification.entity.NotificationType;
+import com.hedi.payflow.notification.service.NotificationService;
 
 import java.util.UUID;
 
@@ -25,6 +27,7 @@ public class WalletService {
     private final WalletRepository walletRepository;
     private final WalletTransactionRepository transactionRepository;
     private final LedgerService ledgerService;
+    private final NotificationService notificationService;
 
     public WalletResponse getMyWallet(Authentication authentication) {
         User user = userRepository.findByEmail(authentication.getName())
@@ -66,6 +69,14 @@ public class WalletService {
                     savedWallet.getCurrency(),
                     "Wallet deposit",
                     savedTransaction
+            );
+
+            notificationService.create(
+                     user,
+                     NotificationType.DEPOSIT_RECEIVED,
+                     "Deposit received",
+                     request.getAmount() + " " + savedWallet.getCurrency() +
+                     " has been added to your wallet."
             );
 
             savedTransaction.setStatus(TransactionStatus.SUCCESS);
